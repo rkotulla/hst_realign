@@ -63,16 +63,24 @@ if __name__ == "__main__":
         description='Fix HST absolute alignment')
 
     parser.add_argument(
-        'filename', type=str,
+        'filelist', type=str, nargs='+',
         metavar='input.fits',
         help='filename of input file')
     parser.add_argument(
         '-extname', type=str, metavar='extname',
         help='extension name', default='SCI',
     )
+    parser.add_argument(
+        '-ref', type=str, metavar='reference_frame',
+        help='reference frame - this frame is used for detection and alignment',
+        default=None,
+    )
     args = parser.parse_args()
 
-    hdulist= fits.open(args.filename)
+    if (args.ref is None):
+        args.ref= args.filelist[0]
+
+    hdulist= fits.open(args.ref)
     hdulist.info()
 
     headers = ['CRPIX1', 'CRPIX2',
@@ -469,3 +477,27 @@ if __name__ == "__main__":
 
     final_file = "tmp_%s.wcsfinal.fits" % (ext.name)
     fits.PrimaryHDU(data=ext.data, header=ext.header).writeto(final_file, clobber=True)
+
+
+    # Now for all frames in the filelist, update the WCS headers and save
+    # as new files
+    for fn in args.filelist:
+
+        hdu = fits.open(fn)
+        for ext in hdu:
+            all_headers = True
+            for hdr in headers:
+                if (hdr in ext.header):
+                    continue
+                all_headers = False
+                break
+
+            if (not all_headers):
+                continue
+
+            for i,key in enumerate(headers):
+                ext.header[key] = final_wcs[i]
+
+        bn, ext = os.path.splitext(fn)
+        output_fn = "%s.wcsfix.fits" % (bn)
+        hdu.writeto(output_fn, clobber=True)
