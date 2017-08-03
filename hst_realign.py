@@ -19,6 +19,7 @@ from astropy.coordinates import Angle, FK5
 import astropy.units as u
 from astropy.units import Quantity
 from astroquery.gaia import Gaia
+import astropy.wcs
 
 def new_wcs(wcs, p):
 
@@ -340,15 +341,6 @@ if __name__ == "__main__":
 
     # match the catalog - ignore all sources with multiple counterparts
 
-    # ra/dec in image
-    hst_coords = astropy.coordinates.SkyCoord(
-        frame=astropy.coordinates.FK5,
-        unit='deg',
-        ra=catalog[:, 2], dec=catalog[:,3],
-
-    )
-    print hst_coords
-
     # tree = scipy.spatial.KDTree(catalog[:, 2:4])
 
     # get ra/dec from reference
@@ -371,91 +363,109 @@ if __name__ == "__main__":
     #    pass
 
 
-    # for iteration in range(3):
+    for iteration in range(3):
 
-    gaia_pos = astropy.coordinates.SkyCoord(
-        frame=astropy.coordinates.FK5,
-        unit='deg', ra=r['ra'], dec=r['dec'],
-    )
-    print gaia_pos
+        # convert the x/y from HST into ra/dec using the latest and greatest WCS
+        astro_wcs = astropy.wcs.WCS(
+            header=ext.header
+        )
 
-    numpy.savetxt("gaia.cat", numpy.array([r['ra'], r['dec']]).T)
+        hst_ra_dec = astro_wcs.all_pix2world(catalog[:, 0:2], 1)
 
+        # ra/dec in image
+        hst_coords = astropy.coordinates.SkyCoord(
+            frame=astropy.coordinates.FK5,
+            unit='deg',
+            ra=hst_ra_dec[:, 0], dec=hst_ra_dec[:,1],
+            # ra=catalog[:, 2], dec=catalog[:, 3],
 
-    # result = Vizier.query_region(
-    #     coordinates = FK5(ra=Angle(center_pos[0], 'deg'),
-    #                       dec=Angle(center_pos[1], 'deg')),
-    #     radius=Angle(0.1, "deg"),
-    #     catalog='I/324/igsl3', # use GAIA
-    #     columns=['RAJ2000','DEJ2000'],
-    # )
-    # print result
-    #
-    # print result[result.keys()[0]].pprint()
+        )
+        print hst_coords
 
 
-    matched_cat = astropy.coordinates.match_coordinates_sky(
-        matchcoord=hst_coords,
-        catalogcoord=gaia_pos,
-        nthneighbor=1,
-    )
-    print matched_cat
-    idx, sep2d, dist3d = matched_cat
+        gaia_pos = astropy.coordinates.SkyCoord(
+            frame=astropy.coordinates.FK5,
+            unit='deg', ra=r['ra'], dec=r['dec'],
+        )
+        print gaia_pos
 
-    good_match = sep2d < Quantity(1.0, u.arcsec)
-    print good_match
-    print numpy.sum(good_match)
-
-    # TODO: make sure all matches are unique
-
-    print catalog[good_match,0]
-    print catalog[good_match,1]
-
-    print r['ra'].shape
-    print ((r['ra'])[idx]).shape
-
-    print catalog.shape
-    print good_match.shape
-    gaia_ra = ((r['ra'])[idx])[good_match]
-    print gaia_ra.shape
-    gaia_dec = ((r['dec'])[idx])[good_match]
-
-    # gaia_ra = r['ra'][idx][good_match]
-    # print gaia_ra
-    #
-    # matched_gaia = gaia_pos[idx]
-    # #print r['ra'][good_match]
-    # #print r['dec'][good_match]
-    # print matched_gaia
-    #
-    #
-    xy_radec = numpy.array([
-         catalog[good_match,0], catalog[good_match,1],
-         gaia_ra, gaia_dec,
-    ]).T
-    print xy_radec
-    numpy.savetxt("xy_radec", xy_radec)
+        numpy.savetxt("gaia.cat", numpy.array([r['ra'], r['dec']]).T)
 
 
-    #
-    # No recompute the WCS with these new & improved numbers
-    #
-    fit = scipy.optimize.leastsq(wcs_fit,
-                                 p_init,
-                                 args=(wcs, headers, xy_radec[:, 0:2], xy_radec[:, 2:4],
-                                       cos_dec),
-                                 maxfev=1000,
-                                 full_output=1)
-    # print fit
-    final_wcs = fit[0]
+        # result = Vizier.query_region(
+        #     coordinates = FK5(ra=Angle(center_pos[0], 'deg'),
+        #                       dec=Angle(center_pos[1], 'deg')),
+        #     radius=Angle(0.1, "deg"),
+        #     catalog='I/324/igsl3', # use GAIA
+        #     columns=['RAJ2000','DEJ2000'],
+        # )
+        # print result
+        #
+        # print result[result.keys()[0]].pprint()
 
-    print "WCS correction: %d/%d pixels" % (
-        final_wcs[0] - p_init[0],
-        final_wcs[1] - p_init[1],
-        #     numpy.degrees(improved_wcs[2]-p_init[2]),
-    )
-    for i,key in enumerate(headers):
-        ext.header[key] = final_wcs[i]
+
+        matched_cat = astropy.coordinates.match_coordinates_sky(
+            matchcoord=hst_coords,
+            catalogcoord=gaia_pos,
+            nthneighbor=1,
+        )
+        print matched_cat
+        idx, sep2d, dist3d = matched_cat
+
+        good_match = sep2d < Quantity(1.0, u.arcsec)
+        print good_match
+        print numpy.sum(good_match)
+
+        # TODO: make sure all matches are unique
+
+        print catalog[good_match,0]
+        print catalog[good_match,1]
+
+        print r['ra'].shape
+        print ((r['ra'])[idx]).shape
+
+        print catalog.shape
+        print good_match.shape
+        gaia_ra = ((r['ra'])[idx])[good_match]
+        print gaia_ra.shape
+        gaia_dec = ((r['dec'])[idx])[good_match]
+
+        # gaia_ra = r['ra'][idx][good_match]
+        # print gaia_ra
+        #
+        # matched_gaia = gaia_pos[idx]
+        # #print r['ra'][good_match]
+        # #print r['dec'][good_match]
+        # print matched_gaia
+        #
+        #
+        xy_radec = numpy.array([
+             catalog[good_match,0], catalog[good_match,1],
+             gaia_ra, gaia_dec,
+        ]).T
+        print xy_radec
+        numpy.savetxt("xy_radec", xy_radec)
+
+
+        #
+        # No recompute the WCS with these new & improved numbers
+        #
+        fit = scipy.optimize.leastsq(wcs_fit,
+                                     p_init,
+                                     args=(wcs, headers, xy_radec[:, 0:2], xy_radec[:, 2:4],
+                                           cos_dec),
+                                     maxfev=1000,
+                                     full_output=1)
+        # print fit
+        final_wcs = fit[0]
+
+        print "WCS correction: %d/%d pixels" % (
+            final_wcs[0] - p_init[0],
+            final_wcs[1] - p_init[1],
+            #     numpy.degrees(improved_wcs[2]-p_init[2]),
+        )
+        for i,key in enumerate(headers):
+            ext.header[key] = final_wcs[i]
 
     final_file = "tmp_%s.wcsfinal.fits" % (ext.name)
     fits.PrimaryHDU(data=ext.data, header=ext.header).writeto(final_file, clobber=True)
