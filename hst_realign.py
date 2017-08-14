@@ -89,9 +89,11 @@ if __name__ == "__main__":
     #
     # open ds9
     #
+    print "Establishing XPA connection and starting ds9"
     pyds9.ds9_xpans()
     ds9 = pyds9.DS9(target="hst_realign", start="-scale zscale -zoom 0.5", wait=25)
 
+    files_to_delete = []
 
     ext = hdulist[args.extname]
     backup_hdr = ext.header.copy()
@@ -112,6 +114,7 @@ if __name__ == "__main__":
     # # save current extension as separate file
     tmp_file = "tmp_%s.fits" % (ext.name)
     fits.PrimaryHDU(data=ext.data, header=ext.header).writeto(tmp_file, clobber=True)
+    files_to_delete.append(tmp_file)
 
     ds9.set("frame delete all")
 
@@ -177,7 +180,6 @@ if __name__ == "__main__":
 
         while (True):
 
-            break
             while (True):
                 print "get pixel position"
                 try:
@@ -230,7 +232,7 @@ if __name__ == "__main__":
             all_pixel.append(coords_px)
             all_wcs.append(coords_wcs)
 
-        check = "\n" #raw_input("ok")
+        check = raw_input("ok")
         if (check == "r"):
             print "Resetting"
             all_pixel, all_wcs = [], []
@@ -258,7 +260,7 @@ if __name__ == "__main__":
             # for i,key in enumerate(headers):
             # p_init[i] = ext.header[key]
 
-        print p_init
+        print "Initial WCS setup:\n",p_init
 
         fit = scipy.optimize.leastsq(wcs_fit,
                                  p_init,
@@ -287,10 +289,12 @@ if __name__ == "__main__":
 
         fixed_file = "tmp_%s.wcsfix.fits" % (ext.name)
         fits.PrimaryHDU(data=ext.data, header=ext.header).writeto(fixed_file, clobber=True)
+        files_to_delete.append(fixed_file)
 
         # also save the user-generated position data
         merged = numpy.append(np_all_pixel, np_all_wcs, axis=1)
         numpy.savetxt(datafile, merged)
+        files_to_delete.append(datafile)
 
         ds9.set("frame 3")
         ds9.set("wcs skyformat degrees")
@@ -330,6 +334,7 @@ if __name__ == "__main__":
     ]
     with open("tmp.sex.param", "w") as dp:
         dp.write("\n".join(default_param))
+    files_to_delete.append("tmp.sex.param")
     sex_cmd = """sex -CATALOG_NAME tmp.cat -PARAMETERS_NAME tmp.sex.param
         -DETECT_THRESH 10 
         -DETECT_MINAREA 10
@@ -337,9 +342,11 @@ if __name__ == "__main__":
         
         %s""" % (fixed_file) # tmp_file
     os.system(" ".join(sex_cmd.split()))
+    files_to_delete.append("tmp.cat")
 
     # load catalog
     catalog = numpy.loadtxt("tmp.cat")
+
 
     #
     # Now re-compute the ra/dec of all sources with the rough correction
@@ -397,7 +404,7 @@ if __name__ == "__main__":
         )
         print gaia_pos
 
-        numpy.savetxt("gaia.cat", numpy.array([r['ra'], r['dec']]).T)
+        numpy.savetxt(args.ref[:-5]+".gaia.cat", numpy.array([r['ra'], r['dec']]).T)
 
 
         # result = Vizier.query_region(
@@ -477,11 +484,16 @@ if __name__ == "__main__":
 
     final_file = "tmp_%s.wcsfinal.fits" % (ext.name)
     fits.PrimaryHDU(data=ext.data, header=ext.header).writeto(final_file, clobber=True)
-
+    files_to_delete.append(final_file)
 
     # Now for all frames in the filelist, update the WCS headers and save
     # as new files
     for fn in args.filelist:
+
+        bn, ext = os.path.splitext(fn)
+        output_fn = "%s.wcsfix.fits" % (bn)
+
+        print "Applying corrected WCS system to %s --> %s" % (fn, output_fn)
 
         hdu = fits.open(fn)
         for ext in hdu:
@@ -498,6 +510,11 @@ if __name__ == "__main__":
             for i,key in enumerate(headers):
                 ext.header[key] = final_wcs[i]
 
-        bn, ext = os.path.splitext(fn)
-        output_fn = "%s.wcsfix.fits" % (bn)
         hdu.writeto(output_fn, clobber=True)
+
+    #
+    # delete temporary files
+    #
+    for fn in files_to_delete:
+        if (os.path.isfile(fn)):
+            os.remove(fn)
